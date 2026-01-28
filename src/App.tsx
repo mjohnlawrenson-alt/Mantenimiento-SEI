@@ -119,7 +119,7 @@ function TeacherView() {
           const compressedDataUrl = canvas.toDataURL('image/jpeg', 0.7);
 
           // 4. Guardar
-          setIncidencia({ ...incidencia, foto: compressedDataUrl });
+          setIncidencia({ ...incidencia, photo: compressedDataUrl });
         };
       };
     }

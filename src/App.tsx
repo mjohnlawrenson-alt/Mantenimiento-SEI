@@ -145,7 +145,7 @@ function TeacherView() {
       <div className="bg-white p-4 rounded shadow text-center">
          <label className="block w-full p-4 border-2 border-dashed border-blue-300 rounded cursor-pointer">
             <div className="text-2xl mb-1">📷</div>
-            <span className="text-blue-600 font-bold">{photo ? 'Foto Lista' : 'Adjuntar Foto'}</span>
+            <span className="text-blue-600 font-bold">{photo ? 'photo Lista' : 'Adjuntar photo'}</span>
             <input type="file" accept="image/*" className="hidden" onChange={handleFile} />
          </label>
          {photo && <img src={photo} className="mt-2 h-24 w-full object-cover rounded"/>}
@@ -166,7 +166,7 @@ function StaffView() {
   }, []);
 
   const finishTask = async () => {
-    if(!evidence) return alert('Falta foto prueba');
+    if(!evidence) return alert('Falta photo prueba');
     await updateDoc(doc(db, 'tasks', selected.id), { status:'completed', completionPhoto: evidence });
     setSelected(null); setEvidence(null);
   };

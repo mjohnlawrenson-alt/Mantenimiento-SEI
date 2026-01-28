@@ -89,12 +89,39 @@ function TeacherView() {
     } catch (err) { alert('Error: ' + err.message); }
   };
 
-  const handleFile = (e) => {
+    // --- VERSIÓN MEJORADA (COMPRIME LA FOTO) ---
+  const handleFile = (e: any) => {
     const file = e.target.files[0];
-    if(file){
-        const reader = new FileReader();
-        reader.onloadend = () => setPhoto(reader.result);
-        reader.readAsDataURL(file);
+    if (file) {
+      const reader = new FileReader();
+      reader.readAsDataURL(file);
+      reader.onload = (event: any) => {
+        const img = new Image();
+        img.src = event.target.result;
+        img.onload = () => {
+          // 1. Crear un lienzo virtual
+          const canvas = document.createElement('canvas');
+          const MAX_WIDTH = 800; 
+          const scaleSize = MAX_WIDTH / img.width;
+          
+          // 2. Redimensionar
+          if (img.width > MAX_WIDTH) {
+             canvas.width = MAX_WIDTH;
+             canvas.height = img.height * scaleSize;
+          } else {
+             canvas.width = img.width;
+             canvas.height = img.height;
+          }
+
+          // 3. Dibujar y Comprimir
+          const ctx = canvas.getContext('2d');
+          ctx?.drawImage(img, 0, 0, canvas.width, canvas.height);
+          const compressedDataUrl = canvas.toDataURL('image/jpeg', 0.7);
+
+          // 4. Guardar
+          setIncidencia({ ...incidencia, foto: compressedDataUrl });
+        };
+      };
     }
   };
 

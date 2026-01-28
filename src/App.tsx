@@ -89,7 +89,7 @@ function TeacherView() {
     } catch (err) { alert('Error: ' + err.message); }
   };
 
-    // --- VERSIÓN MEJORADA (COMPRIME LA FOTO) ---
+    // --- VERSIÓN MEJORADA (COMPRIME LA PHOTO) ---
   const handleFile = (e: any) => {
     const file = e.target.files[0];
     if (file) {

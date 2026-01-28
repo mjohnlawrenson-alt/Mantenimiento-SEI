@@ -188,7 +188,7 @@ function StaffView() {
        <div className="border-t pt-4">
           <p className="font-bold mb-2">Validar Trabajo:</p>
           <label className="block w-full p-3 border border-dashed rounded text-center mb-3 cursor-pointer">
-             <div>📸</div> {evidence ? 'Evidencia Lista' : 'Subir Foto Final'}
+             <div>📸</div> {evidence ? 'Evidencia Lista' : 'Subir photo Final'}
              <input type="file" accept="image/*" className="hidden" onChange={handleFile}/>
           </label>
           <button onClick={finishTask} className="w-full bg-blue-600 text-white py-2 rounded font-bold">TERMINAR TAREA</button>

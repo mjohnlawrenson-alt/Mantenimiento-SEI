@@ -1,167 +1,263 @@
 import React, { useState, useEffect } from 'react';
-import { db } from './firebaseConfig';
-import { collection, addDoc, getDocs, orderBy, query } from 'firebase/firestore';
+import { getFirestore, collection, addDoc, getDocs, orderBy, query, Timestamp } from "firebase/firestore";
+import { getStorage, ref, uploadBytes, getDownloadURL } from "firebase/storage";
+import { getAuth, signInWithPopup, GoogleAuthProvider, signOut, onAuthStateChanged } from "firebase/auth";
+import { getApp } from "firebase/app";
+import * as XLSX from 'xlsx';
 
-interface Incidencia {
-  id?: string;
-  descripcion: string;
-  usuario: string;
-  fecha?: any;
-  photo?: string;
-}
+// TUS LLAVES Y LOGO
+import { db } from './misllaves'; 
+import logo from './assets/logo.png'; 
+
+const app = getApp(); 
+const auth = getAuth(app);
+const storage = getStorage(app);
+const provider = new GoogleAuthProvider();
+
+// --- LISTA DE ADMINS (JEFES) ---
+// Estos usuarios pueden VER el panel Y TAMBIÉN añadir incidencias.
+const ADMIN_EMAILS = [
+  'mlawrenson@colegioeuropa.com',
+  'pdewhurst@colegioeuropa.com',
+  'azarraga@colegioeuropa.com',
+  'TU_CORREO_DE_PRUEBA_AQUI@GMAIL.COM' // <--- ¡MANTÉN TU CORREO AQUÍ PARA SEGUIR PROBANDO TÚ!
+];
 
 function App() {
-  const [incidencias, setIncidencias] = useState<Incidencia[]>([]);
-  const [incidencia, setIncidencia] = useState<Incidencia>({
-    descripcion: '',
-    usuario: '',
-    photo: '' 
-  });
-  const [loading, setLoading] = useState(false);
-  // Variable nueva para ver si hay error en pantalla
-  const [debugInfo, setDebugInfo] = useState('');
+  const [user, setUser] = useState<any>(null);
+  const [isAdmin, setIsAdmin] = useState(false);
+  const [view, setView] = useState('home'); // home | form | admin | success
+  
+  // Datos del formulario
+  const [location, setLocation] = useState('');
+  const [description, setDescription] = useState('');
+  const [photo, setPhoto] = useState<File | null>(null);
+  const [isSubmitting, setIsSubmitting] = useState(false);
+  const [incidents, setIncidents] = useState<any[]>([]);
 
+  // 1. ESCUCHAR LOGIN
   useEffect(() => {
-    const obtenerIncidencias = async () => {
-      try {
-        const q = query(collection(db, "incidencias"), orderBy("fecha", "desc"));
-        const querySnapshot = await getDocs(q);
-        const datos = querySnapshot.docs.map(doc => ({
-          id: doc.id,
-          ...doc.data()
-        })) as Incidencia[];
-        setIncidencias(datos);
-      } catch (e: any) {
-        setDebugInfo("Error cargando lista: " + e.message);
+    const unsubscribe = onAuthStateChanged(auth, (currentUser) => {
+      if (currentUser) {
+        setUser(currentUser);
+        // Si es Admin, le mandamos al Panel de Control
+        if (ADMIN_EMAILS.includes(currentUser.email || '')) {
+          setIsAdmin(true);
+          setView('admin');
+          loadIncidents(); 
+        } else {
+          // Si es Profe, directo al formulario
+          setIsAdmin(false);
+          setView('form');
+        }
+      } else {
+        setUser(null);
+        setView('home');
       }
-    };
-    obtenerIncidencias();
-  }, [loading]);
+    });
+    return () => unsubscribe();
+  }, []);
 
-  const handleFile = (e: any) => {
-    const file = e.target.files[0];
-    if (file) {
-      setDebugInfo("Procesando foto...");
-      const reader = new FileReader();
-      reader.readAsDataURL(file);
-      reader.onload = (event: any) => {
-        const img = new Image();
-        img.src = event.target.result;
-        img.onload = () => {
-          const canvas = document.createElement('canvas');
-          // REDUCCIÓN AGRESIVA: Máximo 500px de ancho
-          const MAX_WIDTH = 500; 
-          const scaleSize = MAX_WIDTH / img.width;
-          
-          if (img.width > MAX_WIDTH) {
-             canvas.width = MAX_WIDTH;
-             canvas.height = img.height * scaleSize;
-          } else {
-             canvas.width = img.width;
-             canvas.height = img.height;
-          }
-
-          const ctx = canvas.getContext('2d');
-          ctx?.drawImage(img, 0, 0, canvas.width, canvas.height);
-          
-          // Calidad baja (0.6) para asegurar que baja de 1MB
-          const compressedDataUrl = canvas.toDataURL('image/jpeg', 0.6);
-          
-          // CALCULAR TAMAÑO EN KILOBYTES
-          const sizeInKB = Math.round((compressedDataUrl.length * 3) / 4 / 1024);
-          setDebugInfo(`Foto lista: ${sizeInKB} KB (Debe ser menor de 1000)`);
-
-          setIncidencia({ ...incidencia, photo: compressedDataUrl });
-        };
-      };
-    }
+  // 2. LOGIN / LOGOUT
+  const handleLogin = async () => {
+    try { await signInWithPopup(auth, provider); } 
+    catch (error) { alert("Error de conexión con Google"); }
   };
 
+  const handleLogout = () => {
+    signOut(auth);
+    setView('home');
+  };
+
+  // 3. CARGAR DATOS (Solo Admin)
+  const loadIncidents = async () => {
+    try {
+      const q = query(collection(db, "incidencias"), orderBy("fecha", "desc"));
+      const querySnapshot = await getDocs(q);
+      const data = querySnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+      setIncidents(data);
+    } catch (e) { console.error(e); }
+  };
+
+  // 4. EXPORTAR EXCEL
+  const exportToExcel = () => {
+    const dataToExport = incidents.map(inc => ({
+      Fecha: inc.fecha?.toDate ? inc.fecha.toDate().toLocaleString() : '',
+      Ubicación: inc.ubicacion,
+      Descripción: inc.descripcion,
+      Reportado_Por: inc.usuario,
+      Email: inc.email,
+      Foto: inc.fotoUrl ? "SÍ" : "NO",
+      Link_Foto: inc.fotoUrl || ""
+    }));
+    const ws = XLSX.utils.json_to_sheet(dataToExport);
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, ws, "Incidencias");
+    XLSX.writeFile(wb, "Mantenimiento_Europa.xlsx");
+  };
+
+  // 5. ENVIAR FORMULARIO
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    setLoading(true);
-    setDebugInfo("Intentando enviar a Firebase...");
+    if (!location || !description) return alert("Faltan datos");
     
+    setIsSubmitting(true);
     try {
+      let photoUrl = "";
+      if (photo) {
+        // Compresión básica
+        const img = new Image();
+        img.src = URL.createObjectURL(photo);
+        await new Promise(r => img.onload = r);
+        const canvas = document.createElement('canvas');
+        const scale = 800 / img.width;
+        canvas.width = 800; canvas.height = img.height * scale;
+        canvas.getContext('2d')?.drawImage(img,0,0,canvas.width,canvas.height);
+        const blob = await new Promise<Blob | null>(r => canvas.toBlob(r, 'image/jpeg', 0.7));
+        
+        if(blob) {
+          const snapshot = await uploadBytes(ref(storage, `fotos/${Date.now()}.jpg`), blob);
+          photoUrl = await getDownloadURL(snapshot.ref);
+        }
+      }
+
       await addDoc(collection(db, "incidencias"), {
-        descripcion: incidencia.descripcion,
-        fecha: new Date(),
-        usuario: incidencia.usuario || "Anónimo",
-        photo: incidencia.photo 
+        ubicacion: location,
+        descripcion: description,
+        fotoUrl: photoUrl,
+        fecha: Timestamp.now(),
+        usuario: user.displayName,
+        email: user.email
       });
-      setIncidencia({ descripcion: '', usuario: '', photo: '' });
-      setDebugInfo("¡Éxito! Enviado correctamente.");
-      alert('¡Incidencia enviada!');
-    } catch (error: any) {
-      console.error("Error: ", error);
-      // Mostramos el error exacto en pantalla
-      setDebugInfo("ERROR FATAL: " + error.message);
-      alert('Error al enviar: ' + error.message);
+
+      // ÉXITO
+      setView('success');
+      
+      // LÓGICA DIFERENTE PARA ADMINS
+      setTimeout(() => {
+        if (isAdmin) {
+          // Si es Admin, recargamos la lista y volvemos al panel (NO cerramos sesión)
+          setLocation(''); setDescription(''); setPhoto(null);
+          loadIncidents();
+          setView('admin');
+        } else {
+          // Si es Profe, cerramos sesión y adiós
+          handleLogout();
+        }
+      }, 2500);
+
+    } catch (error) {
+      alert("Error al subir");
+    } finally {
+      setIsSubmitting(false);
     }
-    setLoading(false);
   };
 
-  return (
-    <div style={{ padding: '20px', fontFamily: 'Arial, sans-serif' }}>
-      <h1>🛠️ Incidencias (Modo Debug)</h1>
-      
-      {/* ZONA DE MENSAJES DE ERROR/INFO */}
-      <div style={{ padding: '10px', backgroundColor: '#fff3cd', color: '#856404', marginBottom: '10px', borderRadius: '5px' }}>
-        <strong>Estado:</strong> {debugInfo || "Esperando acción..."}
-      </div>
+  // --- VISTAS ---
 
-      <div style={{ marginBottom: '30px', padding: '15px', border: '1px solid #ddd', borderRadius: '8px' }}>
-        <h3>Nueva Incidencia</h3>
-        <input 
-          type="text" 
-          placeholder="Nombre" 
-          value={incidencia.usuario}
-          onChange={(e) => setIncidencia({...incidencia, usuario: e.target.value})}
-          style={{ display: 'block', margin: '10px 0', padding: '8px', width: '100%' }}
-        />
-        <textarea 
-          placeholder="Descripción" 
-          value={incidencia.descripcion}
-          onChange={(e) => setIncidencia({...incidencia, descripcion: e.target.value})}
-          style={{ display: 'block', margin: '10px 0', padding: '8px', width: '100%', height: '80px' }}
-        />
-        
-        <p>Foto:</p>
-        <input type="file" accept="image/*" onChange={handleFile} />
-
-        {incidencia.photo && (
-          <div style={{ margin: '10px 0' }}>
-            <p>Vista previa:</p>
-            <img src={incidencia.photo} style={{ maxWidth: '150px' }} alt="Preview"/>
-          </div>
-        )}
-
-        <button 
-          onClick={handleSubmit}
-          disabled={loading}
-          style={{ 
-            backgroundColor: '#0070f3', color: 'white', padding: '10px 20px', 
-            border: 'none', borderRadius: '5px', marginTop: '10px', width: '100%', fontSize: '18px'
-          }}
-        >
-          {loading ? 'Enviando...' : 'GUARDAR AHORA'}
-        </button>
-      </div>
-
-      <h2>Lista</h2>
-      {incidencias.map((item) => (
-        <div key={item.id} style={{ borderBottom: '1px solid #ccc', padding: '10px 0' }}>
-          <strong>{item.usuario}</strong>: {item.descripcion}
-          <br/>
-          {item.photo ? (
-             <img src={item.photo} style={{ maxWidth: '200px', marginTop: '5px', borderRadius: '5px' }} alt="Evidencia" />
-          ) : (
-             <span style={{color: 'gray'}}>(Sin foto)</span>
-          )}
+  // LOGIN
+  if (view === 'home') {
+    return (
+      <div style={styles.container}>
+        <div style={{textAlign: 'center'}}>
+          <img src={logo} alt="Logo" style={styles.logo} />
+          <h1 style={styles.title}>Mantenimiento</h1>
+          <h2 style={styles.subtitle}>Colegio Europa</h2>
+          <button onClick={handleLogin} style={styles.googleBtn}>Entrar con Google</button>
         </div>
-      ))}
+      </div>
+    );
+  }
+
+  // ÉXITO
+  if (view === 'success') {
+    return (
+      <div style={styles.container}>
+        <div style={{textAlign: 'center', marginTop: '50px'}}>
+          <div style={{fontSize: '60px'}}>✅</div>
+          <h2 style={{color: '#2e7d32'}}>¡Registrado!</h2>
+          <p>Gracias por registrar su incidencia.</p>
+          {isAdmin ? <p>Volviendo al panel...</p> : <p>Cerrando sesión...</p>}
+        </div>
+      </div>
+    );
+  }
+
+  // ADMIN PANEL
+  if (view === 'admin') {
+    return (
+      <div style={styles.adminContainer}>
+        <div style={styles.header}>
+          <h3>Panel de Control</h3>
+          <button onClick={handleLogout} style={styles.logoutBtn}>Salir</button>
+        </div>
+        
+        <div style={styles.adminBar}>
+          <button onClick={() => setView('form')} style={styles.addBtn}>
+            ➕ Nueva Incidencia
+          </button>
+          <button onClick={exportToExcel} style={styles.excelBtn}>
+            📥 Excel
+          </button>
+        </div>
+
+        <div style={styles.list}>
+          {incidents.map(inc => (
+            <div key={inc.id} style={styles.card}>
+              <div style={{display:'flex', justifyContent:'space-between'}}>
+                <strong>{inc.ubicacion}</strong>
+                <small>{inc.fecha?.toDate ? inc.fecha.toDate().toLocaleDateString() : ''}</small>
+              </div>
+              <p>{inc.descripcion}</p>
+              <small style={{color:'#004481'}}>👤 {inc.usuario}</small>
+              {inc.fotoUrl && <div style={{marginTop:'5px'}}><a href={inc.fotoUrl} target="_blank" rel="noreferrer">📷 Ver Foto</a></div>}
+            </div>
+          ))}
+        </div>
+      </div>
+    );
+  }
+
+  // FORMULARIO (Profesores y Admins cuando le dan al botón)
+  return (
+    <div style={styles.container}>
+      <div style={styles.header}>
+        {isAdmin ? 
+          <button onClick={() => setView('admin')} style={{...styles.logoutBtn, background:'#666'}}>🔙 Volver</button> 
+          : <span>Hola, {user.displayName?.split(' ')[0]}</span>
+        }
+        <button onClick={handleLogout} style={styles.logoutBtn}>Salir</button>
+      </div>
+
+      <h2 style={{color: '#004481'}}>Nueva Incidencia</h2>
+      <form onSubmit={handleSubmit} style={{display:'flex', flexDirection:'column', gap:'15px'}}>
+        <input value={location} onChange={e => setLocation(e.target.value)} style={styles.input} placeholder="Ubicación (Ej. Aula 4)" />
+        <textarea value={description} onChange={e => setDescription(e.target.value)} style={styles.textarea} placeholder="Descripción del problema..." />
+        <input type="file" accept="image/*" onChange={e => setPhoto(e.target.files ? e.target.files[0] : null)} style={styles.input} />
+        <button type="submit" disabled={isSubmitting} style={styles.submitBtn}>{isSubmitting ? 'ENVIANDO...' : 'REGISTRAR AVISO'}</button>
+      </form>
     </div>
   );
 }
+
+// ESTILOS
+const styles: any = {
+  container: { maxWidth: '500px', margin: '0 auto', padding: '20px', fontFamily: 'sans-serif' },
+  adminContainer: { maxWidth: '800px', margin: '0 auto', padding: '20px', fontFamily: 'sans-serif' },
+  logo: { maxWidth: '180px', marginBottom: '20px' },
+  title: { color: '#004481', margin: '0' },
+  subtitle: { color: '#555', margin: '5px 0 30px 0' },
+  googleBtn: { backgroundColor: '#4285F4', color: 'white', border: 'none', padding: '12px 20px', borderRadius: '5px', fontSize: '16px', fontWeight: 'bold', cursor: 'pointer' },
+  header: { display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '20px' },
+  logoutBtn: { backgroundColor: '#d32f2f', color: 'white', border: 'none', padding: '5px 12px', borderRadius: '4px', cursor: 'pointer' },
+  adminBar: { backgroundColor: '#f5f5f5', padding: '15px', borderRadius: '8px', marginBottom: '20px', display:'flex', justifyContent:'space-between' },
+  addBtn: { backgroundColor: '#004481', color: 'white', border: 'none', padding: '10px', borderRadius: '5px', cursor: 'pointer', fontWeight:'bold' },
+  excelBtn: { backgroundColor: '#2e7d32', color: 'white', border: 'none', padding: '10px', borderRadius: '5px', cursor: 'pointer', fontWeight:'bold' },
+  list: { display: 'flex', flexDirection: 'column', gap: '15px' },
+  card: { border: '1px solid #ddd', padding: '15px', borderRadius: '8px', boxShadow: '0 2px 5px rgba(0,0,0,0.05)' },
+  input: { width: '100%', padding: '10px', borderRadius: '5px', border: '1px solid #ccc', boxSizing: 'border-box', marginBottom:'10px' },
+  textarea: { width: '100%', padding: '10px', borderRadius: '5px', border: '1px solid #ccc', minHeight: '100px', boxSizing: 'border-box' },
+  submitBtn: { backgroundColor: '#004481', color: 'white', border: 'none', padding: '15px', borderRadius: '5px', fontSize: '16px', fontWeight: 'bold', width: '100%' }
+};
 
 export default App;

@@ -1,6 +1,6 @@
 // @ts-nocheck
 import React, { useState, useEffect } from 'react';
-import { db } from './firebaseConfig';
+import { db } from './misllaves';
 import { collection, addDoc, getDocs, orderBy, query } from 'firebase/firestore';
 
 // Esta primera línea // @ts-nocheck es CRUCIAL. No la borres.

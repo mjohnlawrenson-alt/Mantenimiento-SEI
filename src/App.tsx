@@ -3,7 +3,7 @@ import { getFirestore, collection, addDoc, getDocs, orderBy, query, Timestamp, d
 import { getStorage, ref, uploadBytes, getDownloadURL } from "firebase/storage";
 import { getAuth, signInWithPopup, GoogleAuthProvider, signOut, onAuthStateChanged } from "firebase/auth";
 import { getApp } from "firebase/app";
-import * as XLSX from 'xlsx';
+import * as XLSX from 'xlsx'; // <--- Volvemos al Excel normal (sin instalaciones)
 
 import { db } from './misllaves';
 import logo from './assets/colegio.png';
@@ -19,16 +19,14 @@ const ADMIN_EMAILS = [
   'pdewhurst@colegioeuropa.com',
   'azarraga@colegioeuropa.com',
   'mantenimiento.europa.app@gmail.com', 
-  'TU_CORREO_DE_PRUEBA_AQUI@GMAIL.COM' // <--- Asegúrate de que tu correo sigue aquí
+  'TU_CORREO_DE_PRUEBA_AQUI@GMAIL.COM' // <--- Tu correo
 ];
 
 function App() {
   const [user, setUser] = useState<any>(null);
   const [isAdmin, setIsAdmin] = useState(false);
   const [view, setView] = useState('home');
-  
-  // --- NUEVO ESTADO PARA EL FILTRO ---
-  const [filter, setFilter] = useState('todos'); // 'todos' o 'pendientes'
+  const [filter, setFilter] = useState('todos'); 
 
   const [location, setLocation] = useState('');
   const [description, setDescription] = useState('');
@@ -84,7 +82,6 @@ function App() {
   };
 
   const exportToExcel = () => {
-    // Exportamos SIEMPRE todo, aunque esté filtrado en pantalla
     const dataToExport = incidents.map(inc => ({
       Fecha: inc.fecha?.toDate ? inc.fecha.toDate().toLocaleString() : '',
       Ubicación: inc.ubicacion,
@@ -144,17 +141,16 @@ function App() {
     }
   };
 
-  // --- LÓGICA DEL FILTRO ---
   const filteredIncidents = incidents.filter(inc => {
     if (filter === 'todos') return true;
-    // Si filtro es 'pendientes', ocultamos las 'Completada'
     return inc.estado !== 'Completada';
   });
 
   if (view === 'home') {
     return (
       <div style={styles.container}>
-        <div style={{textAlign: 'center'}}>
+        {/* Usamos un contenedor flex para centrar todo perfectamente */}
+        <div style={{display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', minHeight: '60vh'}}>
           <img src={logo} alt="Logo" style={styles.logo} />
           <h1 style={styles.title}>Mantenimiento</h1>
           <h2 style={styles.subtitle}>Colegio Europa</h2>
@@ -190,7 +186,6 @@ function App() {
           <button onClick={exportToExcel} style={styles.excelBtn}>📥 Excel</button>
         </div>
 
-        {/* --- NUEVOS BOTONES DE FILTRO --- */}
         <div style={{display:'flex', gap:'10px', marginBottom:'20px'}}>
           <button 
             onClick={() => setFilter('todos')} 
@@ -261,9 +256,10 @@ function App() {
 const styles: any = {
   container: { maxWidth: '500px', margin: '0 auto', padding: '20px', fontFamily: 'sans-serif' },
   adminContainer: { maxWidth: '800px', margin: '0 auto', padding: '20px', fontFamily: 'sans-serif' },
-  logo: { maxWidth: '180px', marginBottom: '20px' },
-  title: { color: '#004481', margin: '0' },
-  subtitle: { color: '#555', margin: '5px 0 30px 0' },
+  // CAMBIO EN LOGO: display block y margin auto fuerzan el centrado
+  logo: { display: 'block', margin: '0 auto 20px auto', maxWidth: '180px' },
+  title: { color: '#004481', margin: '0', textAlign: 'center' }, // Forzamos texto centrado
+  subtitle: { color: '#555', margin: '5px 0 30px 0', textAlign: 'center' }, // Forzamos texto centrado
   googleBtn: { backgroundColor: '#4285F4', color: 'white', border: 'none', padding: '12px 20px', borderRadius: '5px', fontSize: '16px', fontWeight: 'bold', cursor: 'pointer' },
   header: { display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '20px' },
   logoutBtn: { backgroundColor: '#d32f2f', color: 'white', border: 'none', padding: '5px 12px', borderRadius: '4px', cursor: 'pointer' },
@@ -278,7 +274,6 @@ const styles: any = {
   statusBtnGreen: { backgroundColor: '#e8f5e9', color: '#2e7d32', border: '1px solid #2e7d32', padding: '5px 10px', borderRadius: '15px', cursor: 'pointer', fontSize: '0.8rem', fontWeight: 'bold' },
   statusBtnOrange: { backgroundColor: '#fff3e0', color: '#ef6c00', border: '1px solid #ef6c00', padding: '5px 10px', borderRadius: '15px', cursor: 'pointer', fontSize: '0.8rem', fontWeight: 'bold' },
   statusBtnRed: { backgroundColor: '#ffebee', color: '#c62828', border: '1px solid #c62828', padding: '5px 10px', borderRadius: '15px', cursor: 'pointer', fontSize: '0.8rem', fontWeight: 'bold' },
-  // ESTILOS DE FILTRO
   filterBtn: { background: 'none', border: '1px solid #ccc', padding: '8px 15px', borderRadius: '20px', cursor: 'pointer', color: '#666' },
   filterBtnActive: { background: '#004481', border: '1px solid #004481', padding: '8px 15px', borderRadius: '20px', cursor: 'pointer', color: 'white', fontWeight: 'bold' }
 };

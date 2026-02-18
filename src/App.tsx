@@ -1,31 +1,32 @@
-import React, { useState, useEffect } from 'react'; // <--- CORREGIDO (S mayúscula)
-import { getFirestore, collection, addDoc, getDocs, orderBy, query, Timestamp } from "firebase/firestore";
+import React, { useState, useEffect } from 'react';
+import { getFirestore, collection, addDoc, getDocs, orderBy, query, Timestamp, doc, updateDoc } from "firebase/firestore"; // <--- AÑADIDO updateDoc y doc
 import { getStorage, ref, uploadBytes, getDownloadURL } from "firebase/storage";
 import { getAuth, signInWithPopup, GoogleAuthProvider, signOut, onAuthStateChanged } from "firebase/auth";
 import { getApp } from "firebase/app";
 import * as XLSX from 'xlsx';
 
-import { db } from './misllaves'; 
-// CAMBIO IMPORTANTE: Ahora buscamos el nombre nuevo
-import logo from './assets/colegio.png'; 
+import { db } from './misllaves';
+import logo from './assets/colegio.png';
 
-const app = getApp(); 
+const app = getApp();
 const auth = getAuth(app);
 const storage = getStorage(app);
 const provider = new GoogleAuthProvider();
 
-// --- LISTA DE ADMINS ---
+// --- LISTA DE ADMINS Y MANTENIMIENTO ---
+// CUALQUIER correo que pongas aquí podrá ver la lista y los botones de completar.
 const ADMIN_EMAILS = [
   'mlawrenson@colegioeuropa.com',
   'pdewhurst@colegioeuropa.com',
   'azarraga@colegioeuropa.com',
-  'TU_CORREO_DE_PRUEBA_AQUI@GMAIL.COM' // <--- ¡MANTÉN TU EMAIL AQUÍ!
+  'mantenimiento.europa.app@gmail.com', // <--- EJEMPLO: Pon aquí el correo que usen ellos
+  'TU_CORREO_DE_PRUEBA_AQUI@GMAIL.COM' 
 ];
 
 function App() {
   const [user, setUser] = useState<any>(null);
   const [isAdmin, setIsAdmin] = useState(false);
-  const [view, setView] = useState('home'); 
+  const [view, setView] = useState('home');
   
   const [location, setLocation] = useState('');
   const [description, setDescription] = useState('');
@@ -37,10 +38,11 @@ function App() {
     const unsubscribe = onAuthStateChanged(auth, (currentUser) => {
       if (currentUser) {
         setUser(currentUser);
+        // Si el correo está en la lista, es Admin/Mantenimiento
         if (ADMIN_EMAILS.includes(currentUser.email || '')) {
           setIsAdmin(true);
           setView('admin');
-          loadIncidents(); 
+          loadIncidents();
         } else {
           setIsAdmin(false);
           setView('form');
@@ -54,7 +56,7 @@ function App() {
   }, []);
 
   const handleLogin = async () => {
-    try { await signInWithPopup(auth, provider); } 
+    try { await signInWithPopup(auth, provider); }
     catch (error) { alert("Error de conexión"); }
   };
 
@@ -72,11 +74,26 @@ function App() {
     } catch (e) { console.error(e); }
   };
 
+  // --- NUEVA FUNCIÓN: CAMBIAR ESTADO ---
+  const updateStatus = async (id: string, nuevoEstado: string) => {
+    try {
+      const incidenciaRef = doc(db, "incidencias", id);
+      await updateDoc(incidenciaRef, {
+        estado: nuevoEstado
+      });
+      // Recargamos la lista para ver el cambio
+      loadIncidents();
+    } catch (error) {
+      alert("Error al actualizar estado");
+    }
+  };
+
   const exportToExcel = () => {
     const dataToExport = incidents.map(inc => ({
       Fecha: inc.fecha?.toDate ? inc.fecha.toDate().toLocaleString() : '',
       Ubicación: inc.ubicacion,
       Descripción: inc.descripcion,
+      Estado: inc.estado || "Pendiente", // <--- AÑADIDO al Excel
       Reportado_Por: inc.usuario,
       Email: inc.email,
       Foto: inc.fotoUrl ? "SÍ" : "NO",
@@ -96,6 +113,7 @@ function App() {
     try {
       let photoUrl = "";
       if (photo) {
+        /* ... Lógica de compresión de imagen igual que antes ... */
         const img = new Image();
         img.src = URL.createObjectURL(photo);
         await new Promise(r => img.onload = r);
@@ -117,7 +135,8 @@ function App() {
         fotoUrl: photoUrl,
         fecha: Timestamp.now(),
         usuario: user.displayName,
-        email: user.email
+        email: user.email,
+        estado: "Pendiente" // <--- Estado inicial
       });
 
       setView('success');
@@ -136,6 +155,16 @@ function App() {
       alert("Error al subir");
     } finally {
       setIsSubmitting(false);
+    }
+  };
+
+  // --- AYUDA VISUAL PARA EL ESTADO ---
+  const getStatusStyle = (estado: string) => {
+    switch(estado) {
+      case 'Completada': return { borderLeft: '5px solid #2e7d32', bg: '#e8f5e9' }; // Verde
+      case 'Programada': return { borderLeft: '5px solid #ff9800', bg: '#fff3e0' }; // Naranja
+      case 'Ayuda Externa': return { borderLeft: '5px solid #d32f2f', bg: '#ffebee' }; // Rojo
+      default: return { borderLeft: '5px solid #999', bg: 'white' }; // Pendiente (Gris)
     }
   };
 
@@ -183,27 +212,58 @@ function App() {
         </div>
 
         <div style={styles.list}>
-          {incidents.map(inc => (
-            <div key={inc.id} style={styles.card}>
-              <div style={{display:'flex', justifyContent:'space-between'}}>
-                <strong>{inc.ubicacion}</strong>
-                <small>{inc.fecha?.toDate ? inc.fecha.toDate().toLocaleDateString() : ''}</small>
+          {incidents.map(inc => {
+            const statusStyle = getStatusStyle(inc.estado);
+            return (
+              <div key={inc.id} style={{...styles.card, borderLeft: statusStyle.borderLeft, backgroundColor: statusStyle.bg}}>
+                
+                {/* CABECERA DE LA TARJETA */}
+                <div style={{display:'flex', justifyContent:'space-between'}}>
+                  <strong>{inc.ubicacion}</strong>
+                  <small>{inc.fecha?.toDate ? inc.fecha.toDate().toLocaleDateString() : ''}</small>
+                </div>
+
+                {/* CUERPO */}
+                <p style={{margin:'10px 0'}}>{inc.descripcion}</p>
+                
+                {/* INFORMACIÓN EXTRA */}
+                <div style={{display:'flex', justifyContent:'space-between', alignItems:'center', fontSize:'0.9rem', color:'#666'}}>
+                  <span>👤 {inc.usuario}</span>
+                  {inc.fotoUrl && <a href={inc.fotoUrl} target="_blank" rel="noreferrer" style={{textDecoration:'none'}}>📷 Ver Foto</a>}
+                </div>
+
+                {/* --- SECCIÓN DE ACCIONES DE MANTENIMIENTO --- */}
+                <div style={{marginTop:'15px', paddingTop:'10px', borderTop:'1px solid #ccc'}}>
+                  <p style={{margin:'0 0 5px 0', fontSize:'0.8rem', fontWeight:'bold'}}>
+                    Estado actual: {inc.estado || "Pendiente"}
+                  </p>
+                  <div style={{display:'flex', gap:'5px', flexWrap:'wrap'}}>
+                    <button onClick={() => updateStatus(inc.id, 'Completada')} style={styles.statusBtnGreen}>
+                      ✅ Completada
+                    </button>
+                    <button onClick={() => updateStatus(inc.id, 'Programada')} style={styles.statusBtnOrange}>
+                      📅 Programada
+                    </button>
+                    <button onClick={() => updateStatus(inc.id, 'Ayuda Externa')} style={styles.statusBtnRed}>
+                      🆘 Ayuda
+                    </button>
+                  </div>
+                </div>
+
               </div>
-              <p>{inc.descripcion}</p>
-              <small style={{color:'#004481'}}>👤 {inc.usuario}</small>
-              {inc.fotoUrl && <div style={{marginTop:'5px'}}><a href={inc.fotoUrl} target="_blank" rel="noreferrer">📷 Ver Foto</a></div>}
-            </div>
-          ))}
+            );
+          })}
         </div>
       </div>
     );
   }
 
+  // --- VISTA FORMULARIO (PROFESORES) ---
   return (
     <div style={styles.container}>
       <div style={styles.header}>
         {isAdmin ? 
-          <button onClick={() => setView('admin')} style={{...styles.logoutBtn, background:'#666'}}>🔙 Volver</button> 
+          <button onClick={() => setView('admin')} style={{...styles.logoutBtn, background:'#666'}}>🔙 Volver</button>
           : <span>Hola, {user.displayName?.split(' ')[0]}</span>
         }
         <button onClick={handleLogout} style={styles.logoutBtn}>Salir</button>
@@ -233,10 +293,14 @@ const styles: any = {
   addBtn: { backgroundColor: '#004481', color: 'white', border: 'none', padding: '10px', borderRadius: '5px', cursor: 'pointer', fontWeight:'bold' },
   excelBtn: { backgroundColor: '#2e7d32', color: 'white', border: 'none', padding: '10px', borderRadius: '5px', cursor: 'pointer', fontWeight:'bold' },
   list: { display: 'flex', flexDirection: 'column', gap: '15px' },
-  card: { border: '1px solid #ddd', padding: '15px', borderRadius: '8px', boxShadow: '0 2px 5px rgba(0,0,0,0.05)' },
+  card: { border: '1px solid #ddd', padding: '15px', borderRadius: '8px', boxShadow: '0 2px 5px rgba(0,0,0,0.05)', background: 'white' },
   input: { width: '100%', padding: '10px', borderRadius: '5px', border: '1px solid #ccc', boxSizing: 'border-box', marginBottom:'10px' },
   textarea: { width: '100%', padding: '10px', borderRadius: '5px', border: '1px solid #ccc', minHeight: '100px', boxSizing: 'border-box' },
-  submitBtn: { backgroundColor: '#004481', color: 'white', border: 'none', padding: '15px', borderRadius: '5px', fontSize: '16px', fontWeight: 'bold', width: '100%' }
+  submitBtn: { backgroundColor: '#004481', color: 'white', border: 'none', padding: '15px', borderRadius: '5px', fontSize: '16px', fontWeight: 'bold', width: '100%' },
+  // NUEVOS ESTILOS PARA BOTONES
+  statusBtnGreen: { backgroundColor: '#e8f5e9', color: '#2e7d32', border: '1px solid #2e7d32', padding: '5px 10px', borderRadius: '15px', cursor: 'pointer', fontSize: '0.8rem', fontWeight: 'bold' },
+  statusBtnOrange: { backgroundColor: '#fff3e0', color: '#ef6c00', border: '1px solid #ef6c00', padding: '5px 10px', borderRadius: '15px', cursor: 'pointer', fontSize: '0.8rem', fontWeight: 'bold' },
+  statusBtnRed: { backgroundColor: '#ffebee', color: '#c62828', border: '1px solid #c62828', padding: '5px 10px', borderRadius: '15px', cursor: 'pointer', fontSize: '0.8rem', fontWeight: 'bold' }
 };
 
 export default App;

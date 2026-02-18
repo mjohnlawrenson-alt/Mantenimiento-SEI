@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { getFirestore, collection, addDoc, getDocs, orderBy, query, Timestamp, doc, updateDoc } from "firebase/firestore"; // <--- AÑADIDO updateDoc y doc
+import { getFirestore, collection, addDoc, getDocs, orderBy, query, Timestamp, doc, updateDoc } from "firebase/firestore";
 import { getStorage, ref, uploadBytes, getDownloadURL } from "firebase/storage";
 import { getAuth, signInWithPopup, GoogleAuthProvider, signOut, onAuthStateChanged } from "firebase/auth";
 import { getApp } from "firebase/app";
@@ -14,13 +14,12 @@ const storage = getStorage(app);
 const provider = new GoogleAuthProvider();
 
 // --- LISTA DE ADMINS Y MANTENIMIENTO ---
-// CUALQUIER correo que pongas aquí podrá ver la lista y los botones de completar.
 const ADMIN_EMAILS = [
   'mlawrenson@colegioeuropa.com',
   'pdewhurst@colegioeuropa.com',
   'azarraga@colegioeuropa.com',
-  'mantenimiento.europa.app@gmail.com', // <--- EJEMPLO: Pon aquí el correo que usen ellos
-  'TU_CORREO_DE_PRUEBA_AQUI@GMAIL.COM' 
+  'mantenimiento.europa.app@gmail.com', 
+  'TU_CORREO_DE_PRUEBA_AQUI@GMAIL.COM' // <--- Asegúrate de que tu correo sigue aquí
 ];
 
 function App() {
@@ -28,6 +27,9 @@ function App() {
   const [isAdmin, setIsAdmin] = useState(false);
   const [view, setView] = useState('home');
   
+  // --- NUEVO ESTADO PARA EL FILTRO ---
+  const [filter, setFilter] = useState('todos'); // 'todos' o 'pendientes'
+
   const [location, setLocation] = useState('');
   const [description, setDescription] = useState('');
   const [photo, setPhoto] = useState<File | null>(null);
@@ -38,7 +40,6 @@ function App() {
     const unsubscribe = onAuthStateChanged(auth, (currentUser) => {
       if (currentUser) {
         setUser(currentUser);
-        // Si el correo está en la lista, es Admin/Mantenimiento
         if (ADMIN_EMAILS.includes(currentUser.email || '')) {
           setIsAdmin(true);
           setView('admin');
@@ -74,26 +75,21 @@ function App() {
     } catch (e) { console.error(e); }
   };
 
-  // --- NUEVA FUNCIÓN: CAMBIAR ESTADO ---
   const updateStatus = async (id: string, nuevoEstado: string) => {
     try {
       const incidenciaRef = doc(db, "incidencias", id);
-      await updateDoc(incidenciaRef, {
-        estado: nuevoEstado
-      });
-      // Recargamos la lista para ver el cambio
+      await updateDoc(incidenciaRef, { estado: nuevoEstado });
       loadIncidents();
-    } catch (error) {
-      alert("Error al actualizar estado");
-    }
+    } catch (error) { alert("Error al actualizar estado"); }
   };
 
   const exportToExcel = () => {
+    // Exportamos SIEMPRE todo, aunque esté filtrado en pantalla
     const dataToExport = incidents.map(inc => ({
       Fecha: inc.fecha?.toDate ? inc.fecha.toDate().toLocaleString() : '',
       Ubicación: inc.ubicacion,
       Descripción: inc.descripcion,
-      Estado: inc.estado || "Pendiente", // <--- AÑADIDO al Excel
+      Estado: inc.estado || "Pendiente",
       Reportado_Por: inc.usuario,
       Email: inc.email,
       Foto: inc.fotoUrl ? "SÍ" : "NO",
@@ -108,12 +104,10 @@ function App() {
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!location || !description) return alert("Faltan datos");
-    
     setIsSubmitting(true);
     try {
       let photoUrl = "";
       if (photo) {
-        /* ... Lógica de compresión de imagen igual que antes ... */
         const img = new Image();
         img.src = URL.createObjectURL(photo);
         await new Promise(r => img.onload = r);
@@ -122,51 +116,40 @@ function App() {
         canvas.width = 800; canvas.height = img.height * scale;
         canvas.getContext('2d')?.drawImage(img,0,0,canvas.width,canvas.height);
         const blob = await new Promise<Blob | null>(r => canvas.toBlob(r, 'image/jpeg', 0.7));
-        
         if(blob) {
           const snapshot = await uploadBytes(ref(storage, `fotos/${Date.now()}.jpg`), blob);
           photoUrl = await getDownloadURL(snapshot.ref);
         }
       }
-
       await addDoc(collection(db, "incidencias"), {
-        ubicacion: location,
-        descripcion: description,
-        fotoUrl: photoUrl,
-        fecha: Timestamp.now(),
-        usuario: user.displayName,
-        email: user.email,
-        estado: "Pendiente" // <--- Estado inicial
+        ubicacion: location, descripcion: description, fotoUrl: photoUrl,
+        fecha: Timestamp.now(), usuario: user.displayName, email: user.email,
+        estado: "Pendiente"
       });
-
       setView('success');
-      
       setTimeout(() => {
         if (isAdmin) {
-          setLocation(''); setDescription(''); setPhoto(null);
-          loadIncidents();
-          setView('admin');
-        } else {
-          handleLogout();
-        }
+          setLocation(''); setDescription(''); setPhoto(null); loadIncidents(); setView('admin');
+        } else { handleLogout(); }
       }, 2500);
-
-    } catch (error) {
-      alert("Error al subir");
-    } finally {
-      setIsSubmitting(false);
-    }
+    } catch (error) { alert("Error al subir"); } finally { setIsSubmitting(false); }
   };
 
-  // --- AYUDA VISUAL PARA EL ESTADO ---
   const getStatusStyle = (estado: string) => {
     switch(estado) {
-      case 'Completada': return { borderLeft: '5px solid #2e7d32', bg: '#e8f5e9' }; // Verde
-      case 'Programada': return { borderLeft: '5px solid #ff9800', bg: '#fff3e0' }; // Naranja
-      case 'Ayuda Externa': return { borderLeft: '5px solid #d32f2f', bg: '#ffebee' }; // Rojo
-      default: return { borderLeft: '5px solid #999', bg: 'white' }; // Pendiente (Gris)
+      case 'Completada': return { borderLeft: '5px solid #2e7d32', bg: '#e8f5e9' };
+      case 'Programada': return { borderLeft: '5px solid #ff9800', bg: '#fff3e0' };
+      case 'Ayuda Externa': return { borderLeft: '5px solid #d32f2f', bg: '#ffebee' };
+      default: return { borderLeft: '5px solid #999', bg: 'white' };
     }
   };
+
+  // --- LÓGICA DEL FILTRO ---
+  const filteredIncidents = incidents.filter(inc => {
+    if (filter === 'todos') return true;
+    // Si filtro es 'pendientes', ocultamos las 'Completada'
+    return inc.estado !== 'Completada';
+  });
 
   if (view === 'home') {
     return (
@@ -203,53 +186,53 @@ function App() {
         </div>
         
         <div style={styles.adminBar}>
-          <button onClick={() => setView('form')} style={styles.addBtn}>
-            ➕ Nueva Incidencia
+          <button onClick={() => setView('form')} style={styles.addBtn}>➕ Nueva Incidencia</button>
+          <button onClick={exportToExcel} style={styles.excelBtn}>📥 Excel</button>
+        </div>
+
+        {/* --- NUEVOS BOTONES DE FILTRO --- */}
+        <div style={{display:'flex', gap:'10px', marginBottom:'20px'}}>
+          <button 
+            onClick={() => setFilter('todos')} 
+            style={filter === 'todos' ? styles.filterBtnActive : styles.filterBtn}
+          >
+            📋 Ver Todas
           </button>
-          <button onClick={exportToExcel} style={styles.excelBtn}>
-            📥 Excel
+          <button 
+            onClick={() => setFilter('pendientes')} 
+            style={filter === 'pendientes' ? styles.filterBtnActive : styles.filterBtn}
+          >
+            ⏳ Solo Pendientes
           </button>
         </div>
 
         <div style={styles.list}>
-          {incidents.map(inc => {
+          {filteredIncidents.length === 0 && (
+            <p style={{textAlign:'center', color:'#999'}}>No hay incidencias en esta vista.</p>
+          )}
+          {filteredIncidents.map(inc => {
             const statusStyle = getStatusStyle(inc.estado);
             return (
               <div key={inc.id} style={{...styles.card, borderLeft: statusStyle.borderLeft, backgroundColor: statusStyle.bg}}>
-                
-                {/* CABECERA DE LA TARJETA */}
                 <div style={{display:'flex', justifyContent:'space-between'}}>
                   <strong>{inc.ubicacion}</strong>
                   <small>{inc.fecha?.toDate ? inc.fecha.toDate().toLocaleDateString() : ''}</small>
                 </div>
-
-                {/* CUERPO */}
                 <p style={{margin:'10px 0'}}>{inc.descripcion}</p>
-                
-                {/* INFORMACIÓN EXTRA */}
                 <div style={{display:'flex', justifyContent:'space-between', alignItems:'center', fontSize:'0.9rem', color:'#666'}}>
                   <span>👤 {inc.usuario}</span>
                   {inc.fotoUrl && <a href={inc.fotoUrl} target="_blank" rel="noreferrer" style={{textDecoration:'none'}}>📷 Ver Foto</a>}
                 </div>
-
-                {/* --- SECCIÓN DE ACCIONES DE MANTENIMIENTO --- */}
                 <div style={{marginTop:'15px', paddingTop:'10px', borderTop:'1px solid #ccc'}}>
                   <p style={{margin:'0 0 5px 0', fontSize:'0.8rem', fontWeight:'bold'}}>
                     Estado actual: {inc.estado || "Pendiente"}
                   </p>
                   <div style={{display:'flex', gap:'5px', flexWrap:'wrap'}}>
-                    <button onClick={() => updateStatus(inc.id, 'Completada')} style={styles.statusBtnGreen}>
-                      ✅ Completada
-                    </button>
-                    <button onClick={() => updateStatus(inc.id, 'Programada')} style={styles.statusBtnOrange}>
-                      📅 Programada
-                    </button>
-                    <button onClick={() => updateStatus(inc.id, 'Ayuda Externa')} style={styles.statusBtnRed}>
-                      🆘 Ayuda
-                    </button>
+                    <button onClick={() => updateStatus(inc.id, 'Completada')} style={styles.statusBtnGreen}>✅ Completada</button>
+                    <button onClick={() => updateStatus(inc.id, 'Programada')} style={styles.statusBtnOrange}>📅 Programada</button>
+                    <button onClick={() => updateStatus(inc.id, 'Ayuda Externa')} style={styles.statusBtnRed}>🆘 Ayuda</button>
                   </div>
                 </div>
-
               </div>
             );
           })}
@@ -258,17 +241,12 @@ function App() {
     );
   }
 
-  // --- VISTA FORMULARIO (PROFESORES) ---
   return (
     <div style={styles.container}>
       <div style={styles.header}>
-        {isAdmin ? 
-          <button onClick={() => setView('admin')} style={{...styles.logoutBtn, background:'#666'}}>🔙 Volver</button>
-          : <span>Hola, {user.displayName?.split(' ')[0]}</span>
-        }
+        {isAdmin ? <button onClick={() => setView('admin')} style={{...styles.logoutBtn, background:'#666'}}>🔙 Volver</button> : <span>Hola, {user.displayName?.split(' ')[0]}</span>}
         <button onClick={handleLogout} style={styles.logoutBtn}>Salir</button>
       </div>
-
       <h2 style={{color: '#004481'}}>Nueva Incidencia</h2>
       <form onSubmit={handleSubmit} style={{display:'flex', flexDirection:'column', gap:'15px'}}>
         <input value={location} onChange={e => setLocation(e.target.value)} style={styles.input} placeholder="Ubicación (Ej. Aula 4)" />
@@ -297,10 +275,12 @@ const styles: any = {
   input: { width: '100%', padding: '10px', borderRadius: '5px', border: '1px solid #ccc', boxSizing: 'border-box', marginBottom:'10px' },
   textarea: { width: '100%', padding: '10px', borderRadius: '5px', border: '1px solid #ccc', minHeight: '100px', boxSizing: 'border-box' },
   submitBtn: { backgroundColor: '#004481', color: 'white', border: 'none', padding: '15px', borderRadius: '5px', fontSize: '16px', fontWeight: 'bold', width: '100%' },
-  // NUEVOS ESTILOS PARA BOTONES
   statusBtnGreen: { backgroundColor: '#e8f5e9', color: '#2e7d32', border: '1px solid #2e7d32', padding: '5px 10px', borderRadius: '15px', cursor: 'pointer', fontSize: '0.8rem', fontWeight: 'bold' },
   statusBtnOrange: { backgroundColor: '#fff3e0', color: '#ef6c00', border: '1px solid #ef6c00', padding: '5px 10px', borderRadius: '15px', cursor: 'pointer', fontSize: '0.8rem', fontWeight: 'bold' },
-  statusBtnRed: { backgroundColor: '#ffebee', color: '#c62828', border: '1px solid #c62828', padding: '5px 10px', borderRadius: '15px', cursor: 'pointer', fontSize: '0.8rem', fontWeight: 'bold' }
+  statusBtnRed: { backgroundColor: '#ffebee', color: '#c62828', border: '1px solid #c62828', padding: '5px 10px', borderRadius: '15px', cursor: 'pointer', fontSize: '0.8rem', fontWeight: 'bold' },
+  // ESTILOS DE FILTRO
+  filterBtn: { background: 'none', border: '1px solid #ccc', padding: '8px 15px', borderRadius: '20px', cursor: 'pointer', color: '#666' },
+  filterBtnActive: { background: '#004481', border: '1px solid #004481', padding: '8px 15px', borderRadius: '20px', cursor: 'pointer', color: 'white', fontWeight: 'bold' }
 };
 
 export default App;

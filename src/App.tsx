@@ -3,7 +3,7 @@ import { getFirestore, collection, addDoc, getDocs, orderBy, query, Timestamp, d
 import { getStorage, ref, uploadBytes, getDownloadURL } from "firebase/storage";
 import { getAuth, signInWithPopup, GoogleAuthProvider, signOut, onAuthStateChanged } from "firebase/auth";
 import { getApp } from "firebase/app";
-import * as XLSX from 'xlsx'; // <--- Volvemos al Excel normal (sin instalaciones)
+import * as XLSX from 'xlsx'; 
 
 import { db } from './misllaves';
 import logo from './assets/colegio.png';
@@ -19,7 +19,9 @@ const ADMIN_EMAILS = [
   'pdewhurst@colegioeuropa.com',
   'azarraga@colegioeuropa.com',
   'mantenimiento.europa.app@gmail.com', 
-  'TU_CORREO_DE_PRUEBA_AQUI@GMAIL.COM' // <--- Tu correo
+  'polojavi79@gmail.com', // <--- Javi Polo
+  'iguiadri@gmail.com', // <--- Isabel
+  'TU_CORREO_DE_PRUEBA_AQUI@GMAIL.COM' // <--- Asegúrate de poner tu correo real aquí si no lo has hecho ya
 ];
 
 function App() {
@@ -149,7 +151,6 @@ function App() {
   if (view === 'home') {
     return (
       <div style={styles.container}>
-        {/* Usamos un contenedor flex para centrar todo perfectamente */}
         <div style={{display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', minHeight: '60vh'}}>
           <img src={logo} alt="Logo" style={styles.logo} />
           <h1 style={styles.title}>Mantenimiento</h1>
@@ -256,10 +257,9 @@ function App() {
 const styles: any = {
   container: { maxWidth: '500px', margin: '0 auto', padding: '20px', fontFamily: 'sans-serif' },
   adminContainer: { maxWidth: '800px', margin: '0 auto', padding: '20px', fontFamily: 'sans-serif' },
-  // CAMBIO EN LOGO: display block y margin auto fuerzan el centrado
   logo: { display: 'block', margin: '0 auto 20px auto', maxWidth: '180px' },
-  title: { color: '#004481', margin: '0', textAlign: 'center' }, // Forzamos texto centrado
-  subtitle: { color: '#555', margin: '5px 0 30px 0', textAlign: 'center' }, // Forzamos texto centrado
+  title: { color: '#004481', margin: '0', textAlign: 'center' },
+  subtitle: { color: '#555', margin: '5px 0 30px 0', textAlign: 'center' },
   googleBtn: { backgroundColor: '#4285F4', color: 'white', border: 'none', padding: '12px 20px', borderRadius: '5px', fontSize: '16px', fontWeight: 'bold', cursor: 'pointer' },
   header: { display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '20px' },
   logoutBtn: { backgroundColor: '#d32f2f', color: 'white', border: 'none', padding: '5px 12px', borderRadius: '4px', cursor: 'pointer' },
